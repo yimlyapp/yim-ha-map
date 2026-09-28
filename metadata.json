@@ -1,0 +1,4 @@
+{
+  "name": "Whereabouts Map Card",
+  "description": "Home Assistant Lovelace card to display persons on a map based on configurable display rules"
+}

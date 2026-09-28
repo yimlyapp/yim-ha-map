@@ -2174,3 +2174,8 @@ return html`
 }
 
 customElements.define('whereabouts-map-card-editor', WhereaboutsMapCardEditor);
+try {
+    customElements.define('lens-map-card-editor', WhereaboutsMapCardEditor);
+} catch {
+    /* 'lens-map-card-editor' may already be registered */
+}

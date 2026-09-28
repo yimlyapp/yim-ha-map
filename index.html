@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Whereabouts Map Card</title>
+        <meta name="description" content="Home Assistant Lovelace card to display persons on a map based on configurable display rules" />
+        <meta property="og:title" content="Whereabouts Map Card" />
+        <meta property="og:description" content="Home Assistant Lovelace card to display persons on a map based on configurable display rules" />
+        <script type="module" src="/src/whereabouts-map-card.ts"></script>
+        <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
+        <script>
+            class HaIcon extends HTMLElement {
+                static get observedAttributes() {
+                    return ['icon'];
+                }
+
+                connectedCallback() {
+                    this.style.display = 'inline-flex';
+                    this.style.alignItems = 'center';
+                    this.style.justifyContent = 'center';
+                    this.render();
+                }
+
+                attributeChangedCallback() {
+                    this.render();
+                }
+
+                async render() {
+                    const icon = this.getAttribute('icon');
+                    if (icon && icon.startsWith('mdi:')) {
+                        const iconName = icon.replace('mdi:', '');
+                        const computedStyle = window.getComputedStyle(this);
+                        const size = computedStyle.getPropertyValue('--mdc-icon-size').trim() || '24px';
+                        const color = computedStyle.color || 'currentColor';
+
+                        try {
+                            const response = await fetch(`https://api.iconify.design/mdi/${iconName}.svg?color=${encodeURIComponent(color)}&width=${size}&height=${size}`);
+                            if (response.ok) {
+                                const svg = await response.text();
+                                this.innerHTML = svg;
+                            } else {
+                                this.innerHTML = `<span style="font-size: ${size};">📍</span>`;
+                            }
+                        } catch (e) {
+                            this.innerHTML = `<span style="font-size: ${size};">📍</span>`;
+                        }
+                    }
+                }
+            }
+
+            if (!customElements.get('ha-icon')) {
+                customElements.define('ha-icon', HaIcon);
+            }
+        </script>
+        <style>
+            :root {
+                --primary-color: #03a9f4;
+                --primary-color-rgb: 3, 169, 244;
+                --accent-color: #ff9800;
+                --primary-background-color: #f6f7f9;
+                --secondary-background-color: #e5e7eb;
+                --ha-card-background: #ffffff;
+                --card-background-color: #ffffff;
+                --ha-card-box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+                --ha-card-border-radius: 12px;
+                --primary-text-color: #1f2937;
+                --secondary-text-color: #6b7280;
+                --divider-color: #e5e7eb;
+                --text-primary-color: #ffffff;
+                --info-color: #2196f3;
+                --success-color: #10b981;
+                --warning-color: #f59e0b;
+                --error-color: #ef4444;
+            }
+
+            body.dark {
+                --primary-color: #38bdf8;
+                --primary-background-color: #111827;
+                --secondary-background-color: #1f2937;
+                --ha-card-background: #1e293b;
+                --card-background-color: #1e293b;
+                --ha-card-box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+                --primary-text-color: #f3f4f6;
+                --secondary-text-color: #9ca3af;
+                --divider-color: #374151;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+
+            body {
+                background: var(--primary-background-color);
+                color: var(--primary-text-color);
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+                margin: 0;
+                padding: 0;
+                transition: background-color 0.2s ease, color 0.2s ease;
+            }
+
+            header {
+                background: var(--ha-card-background);
+                border-bottom: 1px solid var(--divider-color);
+                padding: 1rem 2rem;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+            }
+
+            .header-title {
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+            }
+
+            .header-title h1 {
+                margin: 0;
+                font-size: 1.25rem;
+                font-weight: 700;
+                letter-spacing: -0.025em;
+            }
+
+            .header-badge {
+                background: rgba(3, 169, 244, 0.15);
+                color: var(--primary-color);
+                font-size: 0.75rem;
+                font-weight: 600;
+                padding: 0.2rem 0.5rem;
+                border-radius: 9999px;
+            }
+
+            .header-actions {
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+            }
+
+            .btn {
+                background: var(--secondary-background-color);
+                color: var(--primary-text-color);
+                border: 1px solid var(--divider-color);
+                padding: 0.45rem 0.85rem;
+                border-radius: 8px;
+                font-size: 0.875rem;
+                font-weight: 500;
+                cursor: pointer;
+                display: inline-flex;
+                align-items: center;
+                gap: 0.4rem;
+                transition: background 0.15s ease;
+            }
+
+            .btn:hover {
+                background: var(--divider-color);
+            }
+
+            .btn-primary {
+                background: var(--primary-color);
+                color: #ffffff;
+                border-color: var(--primary-color);
+            }
+
+            .btn-primary:hover {
+                filter: brightness(0.92);
+            }
+
+            .container {
+                display: grid;
+                grid-template-columns: minmax(360px, 460px) minmax(360px, 1fr);
+                gap: 2rem;
+                max-width: 1440px;
+                margin: 1.5rem auto;
+                padding: 0 1.5rem 3rem 1.5rem;
+                align-items: start;
+            }
+
+            .panel {
+                background: var(--ha-card-background);
+                border-radius: var(--ha-card-border-radius);
+                border: 1px solid var(--divider-color);
+                box-shadow: var(--ha-card-box-shadow);
+                padding: 1.25rem;
+            }
+
+            .panel-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 1rem;
+                padding-bottom: 0.75rem;
+                border-bottom: 1px solid var(--divider-color);
+            }
+
+            .panel-header h2 {
+                margin: 0;
+                font-size: 1.1rem;
+                font-weight: 600;
+            }
+
+            .tabs {
+                display: flex;
+                gap: 0.5rem;
+                margin-bottom: 1rem;
+                border-bottom: 1px solid var(--divider-color);
+                padding-bottom: 0.5rem;
+            }
+
+            .tab {
+                background: none;
+                border: none;
+                color: var(--secondary-text-color);
+                font-size: 0.875rem;
+                font-weight: 600;
+                padding: 0.4rem 0.75rem;
+                border-radius: 6px;
+                cursor: pointer;
+            }
+
+            .tab.active {
+                background: rgba(3, 169, 244, 0.12);
+                color: var(--primary-color);
+            }
+
+            .sim-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+                gap: 0.75rem;
+                margin-bottom: 1rem;
+            }
+
+            .sim-card {
+                border: 1px solid var(--divider-color);
+                border-radius: 8px;
+                padding: 0.75rem;
+                background: var(--secondary-background-color);
+            }
+
+            .sim-card-title {
+                font-weight: 600;
+                font-size: 0.85rem;
+                margin-bottom: 0.5rem;
+                display: flex;
+                align-items: center;
+                gap: 0.4rem;
+            }
+
+            .sim-card select, .sim-card input {
+                width: 100%;
+                padding: 0.35rem;
+                border: 1px solid var(--divider-color);
+                border-radius: 6px;
+                background: var(--ha-card-background);
+                color: var(--primary-text-color);
+                font-size: 0.8rem;
+                margin-top: 0.25rem;
+            }
+
+            pre.yaml-view {
+                background: var(--secondary-background-color);
+                padding: 1rem;
+                border-radius: 8px;
+                overflow-x: auto;
+                font-size: 0.8rem;
+                font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+                margin: 0;
+                max-height: 400px;
+            }
+
+            .preview-sticky {
+                position: sticky;
+                top: 1.5rem;
+                display: flex;
+                flex-direction: column;
+                gap: 1.25rem;
+            }
+
+            whereabouts-map-card, lens-map-card {
+                display: block;
+                width: 100%;
+                border-radius: var(--ha-card-border-radius);
+                overflow: hidden;
+            }
+
+            whereabouts-map-card-editor, lens-map-card-editor {
+                display: block;
+                width: 100%;
+            }
+
+            @media (max-width: 960px) {
+                .container {
+                    grid-template-columns: 1fr;
+                }
+                .preview-sticky {
+                    position: static;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <div class="header-title">
+                <ha-icon icon="mdi:map-marker-radius" style="color: var(--primary-color); --mdc-icon-size: 28px;"></ha-icon>
+                <h1>Whereabouts Map Card</h1>
+                <span class="header-badge">Lovelace Custom Card</span>
+            </div>
+            <div class="header-actions">
+                <button class="btn" id="theme-toggle" title="Toggle Dark/Light Mode">
+                    <ha-icon icon="mdi:theme-light-dark" style="--mdc-icon-size: 18px;"></ha-icon>
+                    Theme
+                </button>
+                <button class="btn" id="reset-config-btn" title="Reset to Sample Configuration">
+                    <ha-icon icon="mdi:refresh" style="--mdc-icon-size: 18px;"></ha-icon>
+                    Reset Config
+                </button>
+            </div>
+        </header>
+
+        <main class="container">
+            <!-- Left Column: Editor & Hass Simulation Tools -->
+            <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                <div class="panel">
+                    <div class="tabs">
+                        <button class="tab active" id="tab-editor" onclick="switchLeftTab('editor')">Card Editor</button>
+                        <button class="tab" id="tab-sim" onclick="switchLeftTab('sim')">Live State Simulator</button>
+                        <button class="tab" id="tab-yaml" onclick="switchLeftTab('yaml')">Raw YAML</button>
+                    </div>
+
+                    <div id="content-editor">
+                        <whereabouts-map-card-editor id="cardeditor"></whereabouts-map-card-editor>
+                    </div>
+
+                    <div id="content-sim" style="display: none;">
+                        <p style="font-size: 0.85rem; color: var(--secondary-text-color); margin-top: 0;">
+                            Simulate real-time location updates and state changes in Home Assistant to test display conditions and map reaction.
+                        </p>
+                        <div class="sim-grid">
+                            <div class="sim-card">
+                                <div class="sim-card-title">👨 John Doe</div>
+                                <label style="font-size: 0.75rem;">Location Zone:</label>
+                                <select onchange="updatePersonLocation('person.john_doe', this.value)">
+                                    <option value="office" selected>Office (63.4305, 10.3951)</option>
+                                    <option value="home">Home (63.4041, 10.4301)</option>
+                                    <option value="gym">Gym (63.4100, 10.4100)</option>
+                                    <option value="away">Away (63.3800, 10.4500)</option>
+                                </select>
+                                <label style="font-size: 0.75rem; margin-top: 6px; display: block;">Battery (%):</label>
+                                <input type="number" min="0" max="100" value="75" onchange="updateSensorState('sensor.john_phone_battery', this.value)" />
+                            </div>
+
+                            <div class="sim-card">
+                                <div class="sim-card-title">👩 Jane Doe</div>
+                                <label style="font-size: 0.75rem;">Location Zone:</label>
+                                <select onchange="updatePersonLocation('person.jane_doe', this.value)">
+                                    <option value="away" selected>Away (63.4100, 10.4200)</option>
+                                    <option value="home">Home (63.4041, 10.4301)</option>
+                                    <option value="office">Office (63.4305, 10.3951)</option>
+                                    <option value="gym">Gym (63.4100, 10.4100)</option>
+                                </select>
+                                <label style="font-size: 0.75rem; margin-top: 6px; display: block;">Battery (%):</label>
+                                <input type="number" min="0" max="100" value="45" onchange="updateSensorState('sensor.jane_phone_battery', this.value)" />
+                            </div>
+
+                            <div class="sim-card">
+                                <div class="sim-card-title">👦 Bob Doe</div>
+                                <label style="font-size: 0.75rem;">Location Zone:</label>
+                                <select onchange="updatePersonLocation('person.bob_doe', this.value)">
+                                    <option value="home" selected>Home (63.4041, 10.4301)</option>
+                                    <option value="gym">Gym (63.4100, 10.4100)</option>
+                                    <option value="office">Office (63.4305, 10.3951)</option>
+                                    <option value="away">Away (63.3700, 10.4000)</option>
+                                </select>
+                            </div>
+
+                            <div class="sim-card">
+                                <div class="sim-card-title">👧 Alice Doe</div>
+                                <label style="font-size: 0.75rem;">Location Zone:</label>
+                                <select onchange="updatePersonLocation('person.alice_doe', this.value)">
+                                    <option value="gym" selected>Gym (63.4100, 10.4100)</option>
+                                    <option value="home">Home (63.4041, 10.4301)</option>
+                                    <option value="office">Office (63.4305, 10.3951)</option>
+                                    <option value="unknown">Unknown</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                            <button class="btn btn-primary" onclick="triggerRandomMovement()">
+                                <ha-icon icon="mdi:walk" style="--mdc-icon-size: 16px;"></ha-icon>
+                                Simulate Step Movements
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="content-yaml" style="display: none;">
+                        <pre class="yaml-view" id="yaml-code"></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Live Map Card Preview -->
+            <div class="preview-sticky">
+                <div class="panel" style="padding: 1.5rem;">
+                    <div class="panel-header">
+                        <h2>Live Card Preview</h2>
+                        <span style="font-size: 0.8rem; color: var(--secondary-text-color);">Rendered in Lovelace</span>
+                    </div>
+                    <whereabouts-map-card id="mapcard"></whereabouts-map-card>
+                </div>
+            </div>
+        </main>
+
+        <script>
+            const dummyHass = {
+                user: { id: 'user_john' },
+                states: {
+                    'person.john_doe': {
+                        state: 'office',
+                        attributes: {
+                            user_id: 'user_john',
+                            friendly_name: 'John Doe',
+                            entity_picture: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+                            latitude: 63.4305,
+                            longitude: 10.3951,
+                            battery_level: 75,
+                            source: 'device_tracker.john_phone'
+                        }
+                    },
+                    'person.jane_doe': {
+                        state: 'away',
+                        attributes: {
+                            friendly_name: 'Jane Doe',
+                            entity_picture: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
+                            latitude: 63.4100,
+                            longitude: 10.4200,
+                            battery_level: 45,
+                            source: 'device_tracker.jane_phone'
+                        }
+                    },
+                    'person.bob_doe': {
+                        state: 'home',
+                        attributes: {
+                            friendly_name: 'Bob Doe',
+                            entity_picture: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80',
+                            latitude: 63.4041,
+                            longitude: 10.4301,
+                            source: 'device_tracker.bob_phone'
+                        }
+                    },
+                    'person.alice_doe': {
+                        state: 'gym',
+                        attributes: {
+                            friendly_name: 'Alice Doe',
+                            entity_picture: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&auto=format&fit=crop&q=80',
+                            latitude: 63.4100,
+                            longitude: 10.4100,
+                            source: 'device_tracker.alice_phone'
+                        }
+                    },
+                    'sensor.john_phone_battery': {
+                        state: '75',
+                        attributes: { friendly_name: 'John Phone Battery', unit_of_measurement: '%' }
+                    },
+                    'sensor.jane_phone_battery': {
+                        state: '45',
+                        attributes: { friendly_name: 'Jane Phone Battery', unit_of_measurement: '%' }
+                    },
+                    'zone.home': {
+                        state: 'zoning',
+                        attributes: {
+                            friendly_name: 'Home',
+                            latitude: 63.4041,
+                            longitude: 10.4301,
+                            radius: 120,
+                            icon: 'mdi:home'
+                        }
+                    },
+                    'zone.office': {
+                        state: 'zoning',
+                        attributes: {
+                            friendly_name: 'Office',
+                            latitude: 63.4305,
+                            longitude: 10.3951,
+                            radius: 100,
+                            icon: 'mdi:briefcase'
+                        }
+                    },
+                    'zone.gym': {
+                        state: 'zoning',
+                        attributes: {
+                            friendly_name: 'Gym',
+                            latitude: 63.4100,
+                            longitude: 10.4100,
+                            radius: 80,
+                            icon: 'mdi:dumbbell'
+                        }
+                    }
+                },
+                callService: (domain, service, data) => {
+                    console.log(`[Hass Service Call] ${domain}.${service}:`, data);
+                    return Promise.resolve();
+                }
+            };
+
+            const defaultCardConfig = {
+                type: 'custom:whereabouts-map-card',
+                title: 'Family Whereabouts',
+                show_title: true,
+                current_user: 'person.john_doe',
+                persons: [
+                    {
+                        entity_id: 'person.john_doe',
+                        name: 'John',
+                        namedSensors: {
+                            phone_battery: { entity_id: 'sensor.john_phone_battery' }
+                        }
+                    },
+                    {
+                        entity_id: 'person.jane_doe',
+                        name: 'Jane',
+                        namedSensors: {
+                            phone_battery: { entity_id: 'sensor.jane_phone_battery' }
+                        },
+                        display_rules: [
+                            { id: 'rule1', priority: 1, sensor: 'distance', operator: '<', value: '15000', enabled: true }
+                        ]
+                    },
+                    {
+                        entity_id: 'person.bob_doe',
+                        name: 'Bob'
+                    },
+                    {
+                        entity_id: 'person.alice_doe',
+                        name: 'Alice'
+                    }
+                ],
+                display_rules: [
+                    { id: 'default', priority: 1, sensor: 'distance', operator: '<', value: '25000', enabled: true }
+                ],
+                map: {
+                    type: 'color',
+                    opacity: 1
+                },
+                zoom: {
+                    level: 13,
+                    auto_level: false
+                },
+                center: {
+                    use_current_user: true
+                },
+                trail: {
+                    enabled: true,
+                    max_age: 60
+                },
+                show_auto_zoom: true,
+                show_toggle_buttons: true
+            };
+
+            let currentConfig = JSON.parse(JSON.stringify(defaultCardConfig));
+
+            function updateYaml() {
+                const yamlElem = document.getElementById('yaml-code');
+                if (yamlElem && window.jsyaml) {
+                    yamlElem.textContent = window.jsyaml.dump(currentConfig);
+                }
+            }
+
+            function switchLeftTab(tab) {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.getElementById(`tab-${tab}`).classList.add('active');
+
+                document.getElementById('content-editor').style.display = tab === 'editor' ? 'block' : 'none';
+                document.getElementById('content-sim').style.display = tab === 'sim' ? 'block' : 'none';
+                document.getElementById('content-yaml').style.display = tab === 'yaml' ? 'block' : 'none';
+
+                if (tab === 'yaml') {
+                    updateYaml();
+                }
+            }
+
+            const zoneCoords = {
+                home: { lat: 63.4041, lon: 10.4301, state: 'home' },
+                office: { lat: 63.4305, lon: 10.3951, state: 'office' },
+                gym: { lat: 63.4100, lon: 10.4100, state: 'gym' },
+                away: { lat: 63.4100, lon: 10.4200, state: 'away' },
+                unknown: { lat: null, lon: null, state: 'unknown' }
+            };
+
+            function updatePersonLocation(entityId, zoneKey) {
+                const z = zoneCoords[zoneKey];
+                if (!z || !dummyHass.states[entityId]) return;
+
+                dummyHass.states[entityId].state = z.state;
+                if (z.lat !== null) {
+                    dummyHass.states[entityId].attributes.latitude = z.lat + (Math.random() - 0.5) * 0.002;
+                    dummyHass.states[entityId].attributes.longitude = z.lon + (Math.random() - 0.5) * 0.002;
+                } else {
+                    delete dummyHass.states[entityId].attributes.latitude;
+                    delete dummyHass.states[entityId].attributes.longitude;
+                }
+
+                syncHass();
+            }
+
+            function updateSensorState(sensorId, val) {
+                if (dummyHass.states[sensorId]) {
+                    dummyHass.states[sensorId].state = String(val);
+                    syncHass();
+                }
+            }
+
+            function triggerRandomMovement() {
+                for (const entityId of ['person.john_doe', 'person.jane_doe', 'person.bob_doe', 'person.alice_doe']) {
+                    const st = dummyHass.states[entityId];
+                    if (st && st.attributes.latitude) {
+                        st.attributes.latitude += (Math.random() - 0.5) * 0.004;
+                        st.attributes.longitude += (Math.random() - 0.5) * 0.004;
+                    }
+                }
+                syncHass();
+            }
+
+            function syncHass() {
+                const card = document.getElementById('mapcard');
+                const editor = document.getElementById('cardeditor');
+                const newHass = { ...dummyHass, states: { ...dummyHass.states } };
+
+                if (card) {
+                    card.hass = newHass;
+                }
+                if (editor) {
+                    editor.hass = newHass;
+                }
+            }
+
+            async function init() {
+                try {
+                    await window.customElements.whenDefined('whereabouts-map-card');
+                    await window.customElements.whenDefined('whereabouts-map-card-editor');
+
+                    const card = document.getElementById('mapcard');
+                    const editor = document.getElementById('cardeditor');
+
+                    card.setConfig(currentConfig);
+                    card.hass = dummyHass;
+
+                    editor.hass = dummyHass;
+                    if (editor.setConfig) {
+                        editor.setConfig(currentConfig);
+                    }
+
+                    editor.addEventListener('config-changed', (event) => {
+                        currentConfig = event.detail.config;
+                        card.setConfig(currentConfig);
+                        card.requestUpdate();
+                        updateYaml();
+                    });
+
+                    updateYaml();
+                } catch (err) {
+                    console.error("Initialization error:", err);
+                }
+            }
+
+            document.getElementById('theme-toggle').addEventListener('click', () => {
+                document.body.classList.toggle('dark');
+            });
+
+            document.getElementById('reset-config-btn').addEventListener('click', () => {
+                currentConfig = JSON.parse(JSON.stringify(defaultCardConfig));
+                const card = document.getElementById('mapcard');
+                const editor = document.getElementById('cardeditor');
+                card.setConfig(currentConfig);
+                editor.setConfig(currentConfig);
+                updateYaml();
+            });
+
+            init();
+        </script>
+    </body>
+</html>

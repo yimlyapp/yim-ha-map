@@ -18,7 +18,8 @@ export default defineConfig({
         minify: 'esbuild'
     },
     server: {
-        port: 5173,
-        open: '/test/combined.html'
+        host: '0.0.0.0',
+        port: 3000,
+        allowedHosts: true
     }
 });
